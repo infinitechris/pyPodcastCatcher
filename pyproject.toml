@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "podcast-catcher"
+version = "0.1.0"
+description = "A small podcast manager for tracking feeds, episodes, and downloads."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Podcast Catcher Team" }]
+license = { text = "MIT" }
+keywords = ["podcast", "rss", "feed", "download"]
+dependencies = [
+    "requests>=2.31.0",
+    "feedparser>=6.0.0",
+    "mutagen>=1.47.0",
+    "rich>=13.0.0",
+    "pytest>=8.0.0",
+]
+
+[project.optional-dependencies]
+dev = []
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.setuptools]
+packages = ["podcast_catcher"]

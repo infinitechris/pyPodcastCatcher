@@ -1,0 +1,22 @@
+# Python environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Build and packaging output
+build/
+dist/
+*.egg-info/
+
+# Local application state
+podcasts.db
+downloads/
+test_downloads/
+artwork/
+
+# Local configuration and operating-system files
+.env
+.env.*
+.DS_Store
+Thumbs.db
