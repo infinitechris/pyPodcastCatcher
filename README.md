@@ -173,6 +173,26 @@ artwork. See `docs/device-dataset-v1.md` for the shared device contract.
 python -m pytest
 ```
 
+The test suite covers CLI parsing, RSS parsing, storage migrations and state
+retention, download priority behavior, status synchronization, and device
+dataset export. Run the real export command against the local database before
+transferring data:
+
+```bash
+python -m podcast_catcher export-device --downloads ./downloads --output ./device-export
+```
+
+The resulting dataset can be checked with the esPod host validator before it
+is copied to an SD card:
+
+```bash
+python ../esPod/tools/validate_device_dataset.py ./device-export
+```
+
+Hardware-only validation remains deferred until the Cardputer arrives: SD-card
+mounting, MP3 playback, speaker output, display rendering, button input, and
+playback persistence across reboots.
+
 ## Project scripts
 
 ```bash
