@@ -10,7 +10,6 @@ dist/
 *.egg-info/
 
 # Local application state
-podcasts.db
 downloads/
 test_downloads/
 artwork/
