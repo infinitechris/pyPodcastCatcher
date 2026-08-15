@@ -153,6 +153,20 @@ Run `podcast_catcher` without a command to open the interactive podcast browser.
   - `PRIORITY_episode-name.mp3`
 - If priority is not enabled, the podcast is treated as normal and downloads keep their regular filename.
 
+### esPod device export
+
+Export downloaded episodes and playback state into a portable dataset for the
+esPod Cardputer application:
+
+```bash
+python -m podcast_catcher export-device
+```
+
+The command writes `device-export/manifest.json` and copies matching MP3s into
+`device-export/media`. The manifest uses stable feed and episode identities,
+records exact media paths and SHA-256 checksums, and does not copy standalone
+artwork. See `docs/device-dataset-v1.md` for the shared device contract.
+
 ## Testing
 
 ```bash

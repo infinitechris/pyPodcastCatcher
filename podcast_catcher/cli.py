@@ -15,6 +15,7 @@ from rich.table import Table
 
 from .downloader import _safe_directory_name, download_file
 from .artwork import download_artwork
+from .device_sync import export_device_dataset
 from .rss import fetch_feed_data
 from .status_sync import export_status, inspect_status
 from .storage import PodcastStorage
@@ -61,6 +62,11 @@ def build_parser() -> argparse.ArgumentParser:
     watch_parser.add_argument("--destination", default="./downloads", help="Download directory")
     watch_parser.add_argument("--once", action="store_true", help="Check feeds once, then exit")
     watch_parser.set_defaults(func=handle_watch)
+
+    export_parser = subparsers.add_parser("export-device", help="Export downloaded episodes for esPod")
+    export_parser.add_argument("--downloads", default="./downloads", help="Source download directory")
+    export_parser.add_argument("--output", default="./device-export", help="Output dataset directory")
+    export_parser.set_defaults(func=handle_export_device)
 
     return parser
 
@@ -463,9 +469,16 @@ def handle_refresh(args: argparse.Namespace) -> int:
     if feed is None:
         console.print(f"No feed found with ID {args.feed_id}.")
         return 1
-    
+
+
     new_count = storage.refresh_feed(args.feed_id)
     console.print(f"Refreshed feed '{feed['title']}': found {new_count} new episode(s)")
+    return 0
+
+
+def handle_export_device(args: argparse.Namespace) -> int:
+    manifest_path = export_device_dataset(ensure_storage(), args.downloads, args.output)
+    console.print(f"Exported device dataset to {manifest_path.parent}.")
     return 0
 
 

@@ -13,6 +13,7 @@ dist/
 downloads/
 test_downloads/
 artwork/
+device-export/
 
 # Local configuration and operating-system files
 .env

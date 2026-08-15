@@ -8,7 +8,7 @@ from podcast_catcher.cli import build_parser, handle_add
 def test_build_parser_has_expected_commands():
     parser = build_parser()
     subparsers_action = next(action for action in parser._actions if action.dest == "command")
-    assert set(subparsers_action.choices) == {"add", "list", "download", "remove", "toggle", "refresh", "watch"}
+    assert set(subparsers_action.choices) == {"add", "list", "download", "remove", "toggle", "refresh", "watch", "export-device"}
 
 
 def test_build_parser_accepts_priority_flag():
