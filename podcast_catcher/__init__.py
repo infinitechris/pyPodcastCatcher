@@ -1,4 +1,4 @@
-"""Podcast Catcher package."""
+"""pyPodcastCatcher package."""
 
 __all__ = ["__version__"]
 

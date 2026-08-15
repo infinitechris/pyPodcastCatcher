@@ -1,6 +1,6 @@
-# Podcast Catcher
+# pyPodcastCatcher
 
-Podcast Catcher is a lightweight command-line podcast manager for subscribing to RSS feeds, listing episodes, and downloading audio files into a local `downloads` directory.
+pyPodcastCatcher is a lightweight Python command-line podcast manager for subscribing to RSS feeds, listing episodes, and downloading audio files into a local `downloads` directory.
 
 ## Features
 

@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "podcast-catcher"
+name = "pyPodcastCatcher"
 version = "0.1.0"
-description = "A small podcast manager for tracking feeds, episodes, and downloads."
+description = "A Python podcast manager for tracking feeds, episodes, and downloads."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Podcast Catcher Team" }]
