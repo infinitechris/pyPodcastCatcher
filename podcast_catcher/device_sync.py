@@ -94,3 +94,19 @@ def export_device_dataset(
     manifest_path = destination / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return manifest_path
+
+
+def sync_device_root(
+    storage: PodcastStorage,
+    downloads_dir: str | Path = "downloads",
+    target_root: str | Path = ".",
+    dataset_dirname: str = "device-export",
+) -> tuple[Path, Path, Path, Path]:
+    target = Path(target_root)
+    dataset_root = target / dataset_dirname
+    dataset_root.mkdir(parents=True, exist_ok=True)
+
+    manifest_path = export_device_dataset(storage, downloads_dir, dataset_root)
+    status_manifest_path, status_hash_path = export_status(storage, target)
+
+    return manifest_path, dataset_root, status_manifest_path, status_hash_path
