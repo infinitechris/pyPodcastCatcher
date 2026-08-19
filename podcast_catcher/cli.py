@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import msvcrt
 import os
 import sqlite3
 import sys
@@ -13,14 +12,76 @@ from rich.console import Console
 from rich.live import Live
 from rich.table import Table
 
+if os.name == "nt":
+    import msvcrt
+else:
+    import select
+    import termios
+    import tty
+
 from .downloader import _safe_directory_name, download_file
 from .artwork import download_artwork
-from .device_sync import export_device_dataset
+from .device_sync import export_device_dataset, sync_device_root
 from .rss import fetch_feed_data
 from .status_sync import export_status, inspect_status
 from .storage import PodcastStorage
 
 console = Console()
+
+
+def _clear_screen() -> None:
+    os.system("cls" if os.name == "nt" else "clear")
+
+
+def _decode_key_sequence(sequence: str) -> str:
+    if sequence in {"\r", "\n"}:
+        return "ENTER"
+    if sequence in {"\x1b[A", "\x1bOA"}:
+        return "UP"
+    if sequence in {"\x1b[B", "\x1bOB"}:
+        return "DOWN"
+    if sequence == "\x1b":
+        return "ESC"
+    return sequence
+
+
+def _get_key() -> str:
+    if os.name == "nt":
+        key = msvcrt.getwch()
+        if key in {"\x00", "\xe0"}:
+            key = msvcrt.getwch()
+            key = "\x1b[A" if key == "H" else "\x1b[B" if key == "P" else key
+        if key == "\x03":
+            raise KeyboardInterrupt
+        return _decode_key_sequence(key)
+
+    if not sys.stdin.isatty():
+        raise KeyboardInterrupt
+
+    file_descriptor = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(file_descriptor)
+    try:
+        tty.setcbreak(file_descriptor)
+        sequence = os.read(file_descriptor, 1).decode("utf-8", errors="ignore")
+        if sequence == "\x03":
+            raise KeyboardInterrupt
+
+        if sequence == "\x1b":
+            deadline = time.monotonic() + 0.1
+            while time.monotonic() < deadline:
+                remaining = max(0.0, deadline - time.monotonic())
+                ready, _, _ = select.select([sys.stdin], [], [], remaining)
+                if not ready:
+                    break
+                sequence += os.read(file_descriptor, 1).decode("utf-8", errors="ignore")
+                if sequence in {"\x1b[A", "\x1b[B", "\x1bOA", "\x1bOB"}:
+                    break
+                if len(sequence) >= 3:
+                    break
+
+        return _decode_key_sequence(sequence)
+    finally:
+        termios.tcsetattr(file_descriptor, termios.TCSADRAIN, old_settings)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -67,6 +128,12 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser.add_argument("--downloads", default="./downloads", help="Source download directory")
     export_parser.add_argument("--output", default="./device-export", help="Output dataset directory")
     export_parser.set_defaults(func=handle_export_device)
+
+    sync_parser = subparsers.add_parser("sync-device", help="Copy the device dataset and podcast status files to a mounted Cardputer ADV")
+    sync_parser.add_argument("--downloads", default="./downloads", help="Source download directory")
+    sync_parser.add_argument("--target", required=True, help="Mounted USB root for the Cardputer ADV")
+    sync_parser.add_argument("--dataset-dirname", default="device-export", help="Dataset directory name inside the device root")
+    sync_parser.set_defaults(func=handle_sync_device)
 
     return parser
 
@@ -189,11 +256,13 @@ def _confirm_feed_removal(feed_title: str) -> bool:
     ).strip().lower()
     return response in {"y", "yes"}
 
-    def _confirm_catch_up(feed_title: str) -> bool:
-        response = input(
-            f"Enable catch-up mode for '{feed_title}'? This may fetch the full available archive. [y/N]: "
-        ).strip().lower()
-        return response in {"y", "yes"}
+
+
+def _confirm_catch_up(feed_title: str) -> bool:
+    response = input(
+        f"Enable catch-up mode for '{feed_title}'? This may fetch the full available archive. [y/N]: "
+    ).strip().lower()
+    return response in {"y", "yes"}
 
 
 def handle_download(args: argparse.Namespace) -> int:
@@ -281,13 +350,13 @@ def handle_download(args: argparse.Namespace) -> int:
                     bool(episode.get("priority", False)),
                     feed.get("image_url"),
                 )
-        
+
         # Retry failed episodes after initial queue
         if failed_downloads:
             console.print("\n[yellow]Retrying failed episodes...[/yellow]")
             for audio_url, episode_title, podcast_title, priority in failed_downloads:
                 do_download(audio_url, episode_title, podcast_title, priority, retry=True)
-        
+
         return 0
 
     if args.feed_id is None or args.episode_index is None:
@@ -321,13 +390,13 @@ def handle_download(args: argparse.Namespace) -> int:
                     bool(episode.get("priority", False)),
                     feed.get("image_url"),
                 )
-            
+
             # Retry failed episodes after initial queue
             if failed_downloads:
                 console.print("\n[yellow]Retrying failed episodes...[/yellow]")
                 for audio_url, episode_title, podcast_title, priority in failed_downloads:
                     do_download(audio_url, episode_title, podcast_title, priority, retry=True)
-            
+
             return 0
         # If only episode_index is provided without feed_id, that's an error
         console.print("Provide either no arguments to download the newest episodes, or both a feed_id and episode_index for a specific episode.")
@@ -453,7 +522,7 @@ def handle_toggle(args: argparse.Namespace) -> int:
 
 def handle_refresh(args: argparse.Namespace) -> int:
     storage = ensure_storage()
-    
+
     if args.feed_id is None:
         # Refresh all feeds
         feed_rows = storage.list_feeds()
@@ -463,7 +532,7 @@ def handle_refresh(args: argparse.Namespace) -> int:
         new_count = storage.refresh_feed(None)
         console.print(f"Refreshed all feeds: found {new_count} new episode(s)")
         return 0
-    
+
     # Refresh specific feed
     feed = storage.get_feed(args.feed_id)
     if feed is None:
@@ -482,6 +551,19 @@ def handle_export_device(args: argparse.Namespace) -> int:
     return 0
 
 
+def handle_sync_device(args: argparse.Namespace) -> int:
+    manifest_path, dataset_root, status_path, hash_path = sync_device_root(
+        ensure_storage(),
+        args.downloads,
+        args.target,
+        args.dataset_dirname,
+    )
+    console.print(f"Synced device dataset to {dataset_root}.")
+    console.print(f"Wrote status files to {status_path.parent} ({status_path.name}, {hash_path.name}).")
+    console.print(f"Manifest written to {manifest_path}.")
+    return 0
+
+
 def _view_feed_episodes(storage: PodcastStorage, feed_id: int) -> None:
     selected = 0
     page = 0
@@ -496,7 +578,7 @@ def _view_feed_episodes(storage: PodcastStorage, feed_id: int) -> None:
         visible_episodes = episodes[start:start + page_size]
         has_more = start + page_size < len(episodes)
         selected = min(selected, len(visible_episodes) if has_more else len(visible_episodes) - 1)
-        os.system("cls")
+        _clear_screen()
         feed = storage.get_feed(feed_id)
         console.print(f"[bold]{feed['title'] if feed else 'Podcast'} episodes[/bold]\n")
         for index, episode in enumerate(visible_episodes):
@@ -507,19 +589,16 @@ def _view_feed_episodes(storage: PodcastStorage, feed_id: int) -> None:
             marker = ">" if selected == len(visible_episodes) else " "
             console.print(f"{marker} MORE >")
         console.print("\nEnter: episode actions | Esc: back")
-        key = msvcrt.getwch()
-        if key == "\x03":
-            raise KeyboardInterrupt
-        if key == "\x1b":
+        key = _get_key()
+        if key == "ESC":
             return
-        if key in {"\x00", "\xe0"}:
-            key = msvcrt.getwch()
-            if key == "H":
-                selected = (selected - 1) % (len(visible_episodes) + int(has_more))
-            elif key == "P":
-                selected = (selected + 1) % (len(visible_episodes) + int(has_more))
+        if key == "UP":
+            selected = (selected - 1) % (len(visible_episodes) + int(has_more))
             continue
-        if key != "\r":
+        if key == "DOWN":
+            selected = (selected + 1) % (len(visible_episodes) + int(has_more))
+            continue
+        if key != "ENTER":
             continue
 
         if has_more and selected == len(visible_episodes):
@@ -536,22 +615,18 @@ def _view_feed_episodes(storage: PodcastStorage, feed_id: int) -> None:
         ]
         action = 0
         while True:
-            os.system("cls")
+            _clear_screen()
             console.print(f"[bold]{episode['title']}[/bold]\n")
             for index, label in enumerate(actions):
                 console.print(f"{'>' if index == action else ' '} {label}")
             console.print("\nSelect Played or Archived to toggle it. Esc: back")
-            key = msvcrt.getwch()
-            if key == "\x03":
-                raise KeyboardInterrupt
-            if key == "\x1b":
+            key = _get_key()
+            if key == "ESC":
                 break
-            if key in {"\x00", "\xe0"}:
-                key = msvcrt.getwch()
-                if key in {"H", "P"}:
-                    action = 1 - action
+            if key in {"UP", "DOWN"}:
+                action = 1 - action
                 continue
-            if key != "\r":
+            if key != "ENTER":
                 continue
             if action == 0:
                 storage.set_episode_state(int(episode["id"]), played=not bool(episode["played"]))
@@ -670,6 +745,10 @@ def _set_catch_up(storage: PodcastStorage, feed: dict[str, object]) -> None:
 
 
 def _interactive_menu() -> int:
+    if not sys.stdin.isatty():
+        console.print("Interactive mode requires a terminal. Use a subcommand such as [bold]python -m podcast_catcher --help[/bold].")
+        return 1
+
     storage = ensure_storage()
     actions = ["Download newest episodes", "Set download count", "Set download filter", "View episodes", "Toggle priority", "Refresh feed", "Remove feed", "Enable catch-up mode"]
     selected_feed = 0
@@ -678,7 +757,7 @@ def _interactive_menu() -> int:
         feeds = storage.list_feeds()
         selected_feed = min(selected_feed, len(feeds) + 1)
 
-        os.system("cls")
+        _clear_screen()
         console.print("[bold]Podcast Catcher[/bold]")
         console.print("Use arrow keys to choose a podcast. Press Enter for actions; q or Esc to exit.\n")
         for index, feed in enumerate(feeds):
@@ -690,19 +769,16 @@ def _interactive_menu() -> int:
         marker = ">" if selected_feed == len(feeds) + 1 else " "
         console.print(f"{marker} Watch all feeds")
 
-        key = msvcrt.getwch()
-        if key == "\x03":
-            raise KeyboardInterrupt
-        if key in {"q", "Q", "\x1b"}:
+        key = _get_key()
+        if key in {"q", "Q", "ESC"}:
             return 0
-        if key in {"\x00", "\xe0"}:
-            key = msvcrt.getwch()
-            if key == "H":
-                selected_feed = (selected_feed - 1) % (len(feeds) + 2)
-            elif key == "P":
-                selected_feed = (selected_feed + 1) % (len(feeds) + 2)
+        if key == "UP":
+            selected_feed = (selected_feed - 1) % (len(feeds) + 2)
             continue
-        if key != "\r":
+        if key == "DOWN":
+            selected_feed = (selected_feed + 1) % (len(feeds) + 2)
+            continue
+        if key != "ENTER":
             continue
 
         if selected_feed == len(feeds):
@@ -730,26 +806,23 @@ def _interactive_menu() -> int:
         feed_id = int(feeds[selected_feed]["id"])
         action_index = 0
         while True:
-            os.system("cls")
+            _clear_screen()
             console.print(f"[bold]{feeds[selected_feed]['title']}[/bold]\n")
             for index, action in enumerate(actions):
                 marker = ">" if index == action_index else " "
                 console.print(f"{marker} {action}")
             console.print("\nPress Esc to go back.")
 
-            key = msvcrt.getwch()
-            if key == "\x03":
-                raise KeyboardInterrupt
-            if key == "\x1b":
+            key = _get_key()
+            if key == "ESC":
                 break
-            if key in {"\x00", "\xe0"}:
-                key = msvcrt.getwch()
-                if key == "H":
-                    action_index = (action_index - 1) % len(actions)
-                elif key == "P":
-                    action_index = (action_index + 1) % len(actions)
+            if key == "UP":
+                action_index = (action_index - 1) % len(actions)
                 continue
-            if key != "\r":
+            if key == "DOWN":
+                action_index = (action_index + 1) % len(actions)
+                continue
+            if key != "ENTER":
                 continue
 
             if action_index == 0:

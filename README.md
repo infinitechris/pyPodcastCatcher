@@ -25,14 +25,24 @@ pyPodcastCatcher is a lightweight Python command-line podcast manager for subscr
 2. Install dependencies:
 
    ```bash
-   python -m pip install -e .
+   python -m venv .venv
+   python -m pip install -e . --no-deps
    ```
 
 3. Run the CLI:
 
    ```bash
-   python -m podcast_catcher --help
+   podcast-catcher --help
    ```
+
+To sync downloaded media and the device status files directly to a mounted Cardputer ADV, run:
+
+```bash
+podcast-catcher sync-device --target /path/to/cardputer-mount
+```
+
+That writes the media bundle under `device-export/` and copies `podcast-status.json`
+and `podcast-status.sha1` into the device root.
 
 ## Example commands
 
@@ -99,6 +109,7 @@ Run `podcast_catcher` without a command to open the interactive podcast browser.
 - On the next launch, a valid SHA1 check is silent.
 - If the hash is invalid, Podcast Catcher compares the JSON content with the desktop database and reports whether they differ; it does not automatically import untrusted changes.
 - A device app can update the JSON while the files are on the device, then return it for a later desktop comparison/import workflow.
+- The `sync-device` command also copies `podcast-status.json` and `podcast-status.sha1` to the mounted device root for Cardputer ADV testing.
 
 ### Download behavior
 
@@ -196,7 +207,8 @@ playback persistence across reboots.
 ## Project scripts
 
 ```bash
-python -m podcast_catcher
+make venv
+make rc
 make test
 make run
 ```
