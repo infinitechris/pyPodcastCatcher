@@ -200,9 +200,9 @@ is copied to an SD card:
 python ../esPod/tools/validate_device_dataset.py ./device-export
 ```
 
-Hardware-only validation remains deferred until the Cardputer arrives: SD-card
-mounting, MP3 playback, speaker output, display rendering, button input, and
-playback persistence across reboots.
+On-device playback/UI behavior is validated in the target device application,
+not in this repository. This project validates dataset generation, sync status,
+and host-side integrity checks.
 
 ## Project scripts
 
