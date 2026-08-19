@@ -546,14 +546,24 @@ def handle_refresh(args: argparse.Namespace) -> int:
 
 
 def handle_export_device(args: argparse.Namespace) -> int:
-    manifest_path = export_device_dataset(ensure_storage(), args.downloads, args.output)
+    storage = ensure_storage()
+    if not storage.list_feeds():
+        console.print("No feeds saved yet.")
+        return 0
+
+    manifest_path = export_device_dataset(storage, args.downloads, args.output)
     console.print(f"Exported device dataset to {manifest_path.parent}.")
     return 0
 
 
 def handle_sync_device(args: argparse.Namespace) -> int:
+    storage = ensure_storage()
+    if not storage.list_feeds():
+        console.print("No feeds saved yet.")
+        return 0
+
     manifest_path, dataset_root, status_path, hash_path = sync_device_root(
-        ensure_storage(),
+        storage,
         args.downloads,
         args.target,
         args.dataset_dirname,
@@ -691,6 +701,10 @@ def _write_watch_status(message: str, live: Live) -> None:
 
 def handle_watch(args: argparse.Namespace) -> int:
     storage = ensure_storage()
+    if not storage.list_feeds():
+        console.print("No feeds saved yet.")
+        return 0
+
     try:
         with Live("Watching all feeds.", console=console, refresh_per_second=4) as live:
             next_check = time.monotonic()
@@ -755,28 +769,33 @@ def _interactive_menu() -> int:
 
     while True:
         feeds = storage.list_feeds()
-        selected_feed = min(selected_feed, len(feeds) + 1)
+        show_watch_all_feeds = bool(feeds)
+        menu_size = len(feeds) + 1 + int(show_watch_all_feeds)
+        selected_feed = min(selected_feed, menu_size - 1)
 
         _clear_screen()
         console.print("[bold]Podcast Catcher[/bold]")
         console.print("Use arrow keys to choose a podcast. Press Enter for actions; q or Esc to exit.\n")
+        if not feeds:
+            console.print("No feeds saved yet. Select + Add podcast to get started.\n")
         for index, feed in enumerate(feeds):
             marker = ">" if index == selected_feed else " "
             priority = " ★" if feed["priority"] else ""
             console.print(f"{marker} {feed['title']}{priority}")
         marker = ">" if selected_feed == len(feeds) else " "
         console.print(f"{marker} + Add podcast")
-        marker = ">" if selected_feed == len(feeds) + 1 else " "
-        console.print(f"{marker} Watch all feeds")
+        if show_watch_all_feeds:
+            marker = ">" if selected_feed == len(feeds) + 1 else " "
+            console.print(f"{marker} Watch all feeds")
 
         key = _get_key()
         if key in {"q", "Q", "ESC"}:
             return 0
         if key == "UP":
-            selected_feed = (selected_feed - 1) % (len(feeds) + 2)
+            selected_feed = (selected_feed - 1) % menu_size
             continue
         if key == "DOWN":
-            selected_feed = (selected_feed + 1) % (len(feeds) + 2)
+            selected_feed = (selected_feed + 1) % menu_size
             continue
         if key != "ENTER":
             continue
@@ -789,7 +808,7 @@ def _interactive_menu() -> int:
                 input("\nPress Enter to continue...")
             continue
 
-        if selected_feed == len(feeds) + 1:
+        if show_watch_all_feeds and selected_feed == len(feeds) + 1:
             interval_text = input("Watch interval in seconds [900]: ").strip()
             try:
                 interval = float(interval_text) if interval_text else 900
